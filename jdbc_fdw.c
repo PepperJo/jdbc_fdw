@@ -2898,10 +2898,24 @@ jdbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					elog(WARNING, "table: %s has unrecognizable column type for JDBC; skipping", tmpTableInfo->table_name);
 					goto NEXT_COLUMN;
 				}
-				/* Print column name and type */
-				appendStringInfo(&buf, "%s %s",
+				if(!strcmp(columnInfo->column_type, "string")) {
+					/* Print column name and type */
+					appendStringInfo(&buf, "\"%s\" text",
+								 columnInfo->column_name);
+				} else if(!strcmp(columnInfo->column_type, "double")) {
+					/* Print column name and type */
+					appendStringInfo(&buf, "\"%s\" double precision",
+								 columnInfo->column_name);
+				} else if(!strcmp(columnInfo->column_type, "long")) {
+					/* Print column name and type */
+					appendStringInfo(&buf, "\"%s\" bigint",
+								 columnInfo->column_name);
+				} else {
+					/* Print column name and type */
+					appendStringInfo(&buf, "\"%s\" %s",
 								 columnInfo->column_name,
 								 columnInfo->column_type);
+				}
 				/* Add option if the column is rowkey. */
 				if (columnInfo->primary_key)
 					appendStringInfoString(&buf, " OPTIONS (key 'true')");
