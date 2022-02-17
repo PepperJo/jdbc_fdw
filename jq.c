@@ -907,7 +907,7 @@ int
 jq_connection_used_password(const Jconn * conn)
 {
 	ereport(DEBUG3, (errmsg("In jq_connection_used_password")));
-	return 0;
+	return 1;
 }
 
 void
@@ -1294,6 +1294,7 @@ jq_get_exception()
 
 		/* determines if an exception is being thrown */
 		exc = (*Jenv)->ExceptionOccurred(Jenv);
+		(*Jenv)->ExceptionDescribe(Jenv);
 		/* get to the message and stack trace one as String */
 		objectClass = (*Jenv)->FindClass(Jenv, "java/lang/Object");
 		if (objectClass == NULL)
