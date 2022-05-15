@@ -457,11 +457,11 @@ public class JDBCUtils {
       resultSetInfoMap.clear();
 
       if (tmpStmt != null) {
-        tmpStmt.close();
+        // tmpStmt.close();
         tmpStmt = null;
       }
       if (tmpPstmt != null) {
-        tmpPstmt.close();
+        // tmpPstmt.close();
         tmpPstmt = null;
       }
     } catch (Throwable e) {
@@ -476,13 +476,12 @@ public class JDBCUtils {
   public void closeConnection() throws SQLException {
     try {
       closeStatement();
-    } catch (Throwable e) {
-      throw e;
-    } finally {
       if (conn != null) {
         conn.close();
         conn = null;
       }
+    } catch (Throwable e) {
+      throw e;
     }
   }
 
