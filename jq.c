@@ -129,7 +129,7 @@ static List * jq_get_table_names(Jconn * conn);
 
 static void jq_get_JDBCUtils(Jconn *conn, jclass *JDBCUtilsClass, jobject *JDBCUtilsObject);
 
-void jq_cancel(Jconn * conn, int resultSetID)
+void jq_cancel(Jconn * conn)
 {
 	jmethodID	idClearResultSetID;
 	jclass		JDBCUtilsClass;
