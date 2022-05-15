@@ -476,12 +476,13 @@ public class JDBCUtils {
   public void closeConnection() throws SQLException {
     try {
       closeStatement();
+    } catch (Throwable e) {
+      throw e;
+    } finally {
       if (conn != null) {
         conn.close();
         conn = null;
       }
-    } catch (Throwable e) {
-      throw e;
     }
   }
 
