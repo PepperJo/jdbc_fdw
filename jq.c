@@ -131,12 +131,11 @@ static void jq_get_JDBCUtils(Jconn *conn, jclass *JDBCUtilsClass, jobject *JDBCU
 
 void jq_cancel(Jconn * conn)
 {
-	jmethodID	idClearResultSetID;
 	jclass		JDBCUtilsClass;
 	jobject		JDBCUtilsObject;
 	jmethodID	id_cancel;
 
-	elog(DEBUG3, (errmsg("In jq_cancel")));
+	elog(DEBUG3, "In jq_cancel");
 
 	jq_get_JDBCUtils(conn, &JDBCUtilsClass, &JDBCUtilsObject);
 	id_cancel = (*Jenv)->GetMethodID(Jenv, JDBCUtilsClass, "cancel",
