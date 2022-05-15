@@ -26,6 +26,7 @@
 #include "miscadmin.h"
 #include "commands/defrem.h"
 #include "libpq-fe.h"
+#include "signal.h"
 
 #include "jni.h"
 
