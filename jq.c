@@ -138,15 +138,12 @@ void jq_cancel(Jconn * conn)
 	elog(DEBUG3, "In jq_cancel");
 
 	jq_get_JDBCUtils(conn, &JDBCUtilsClass, &JDBCUtilsObject);
-	id_cancel = (*Jenv)->GetMethodID(Jenv, JDBCUtilsClass, "cancel",
-										"()V");
+	id_cancel = (*Jenv)->GetMethodID(Jenv, JDBCUtilsClass, "cancel", "()V");
 	if (id_cancel == NULL)
 	{
 		elog(ERROR, "id_cancel is NULL");
 	}
-	jq_exception_clear();
 	(*Jenv)->CallObjectMethod(Jenv, java_call, id_cancel);
-	jq_get_exception();
 	elog(ERROR, "Query has been cancelled");
 }
 
