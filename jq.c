@@ -278,12 +278,12 @@ jdbc_detach_jvm()
 	(*jvm)->DetachCurrentThread(jvm);
 }
 
-static void sig_handler(int signo, siginfo_t *info, void *context)
-{
-	elog(DEBUG3, "Signal: %d", signo);
-	InterruptFlag = true;
-	jdbc_sig_int_interrupt_check_process();
-}
+// static void sig_handler(int signo, siginfo_t *info, void *context)
+// {
+// 	elog(DEBUG3, "Signal: %d", signo);
+// 	// Do nothing and handle cancel in jdbcfdw_xact_callback
+// 	// Otherwise JVM gets killed
+// }
 
 /*
  * jdbc_jvm_init Create the JVM which will be used for calling the Java
@@ -317,12 +317,9 @@ jdbc_jvm_init(const ForeignServer * server, const UserMapping * user)
 
 	if (FunctionCallCheck == false)
 	{
-		sig_action.sa_flags = SA_SIGINFO;
-		sig_action.sa_sigaction = &sig_handler;
-		if (sigaction(SIGINT, &sig_action, NULL) == -1) {
+		if (sigaction(SIGINT, NULL, &sig_action) == -1) {
 			ereport(ERROR, (errmsg("Failed to install signal handler")));
 		}
-
 		classpath = (char *) palloc0(strlen(strpkglibdir) + 19);
 		snprintf(classpath, strlen(strpkglibdir) + 19, "-Djava.class.path=%s", strpkglibdir);
 
@@ -355,6 +352,11 @@ jdbc_jvm_init(const ForeignServer * server, const UserMapping * user)
 					 ));
 		}
 		ereport(DEBUG3, (errmsg("Successfully created a JVM with %d MB heapsize", opts.maxheapsize)));
+		// sig_action.sa_flags = SA_SIGINFO;
+		// sig_action.sa_sigaction = &sig_handler;
+		if (sigaction(SIGINT, &sig_action, NULL) == -1) {
+			ereport(ERROR, (errmsg("Failed to install signal handler")));
+		}
 		InterruptFlag = false;
 		/* Register an on_proc_exit handler that shuts down the JVM. */
 		on_proc_exit(jdbc_destroy_jvm, 0);
