@@ -553,6 +553,9 @@ jdbcfdw_xact_callback(XactEvent event, void *arg)
 				case XACT_EVENT_PARALLEL_PRE_COMMIT:
 					break;
 			}
+		} else if (event == XACT_EVENT_ABORT) {
+			elog(DEBUG3, "Abort transaction");
+			jq_cancel(entry->conn);
 		}
 
 		/* Reset state to show we're out of a transaction */

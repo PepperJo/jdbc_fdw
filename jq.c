@@ -129,6 +129,28 @@ static List * jq_get_table_names(Jconn * conn);
 
 static void jq_get_JDBCUtils(Jconn *conn, jclass *JDBCUtilsClass, jobject *JDBCUtilsObject);
 
+void jq_cancel(Jconn * conn, int resultSetID)
+{
+	jmethodID	idClearResultSetID;
+	jclass		JDBCUtilsClass;
+	jobject		JDBCUtilsObject;
+	jmethodID	id_cancel;
+
+	elog(DEBUG3, (errmsg("In jq_cancel")));
+
+	jq_get_JDBCUtils(conn, &JDBCUtilsClass, &JDBCUtilsObject);
+	id_cancel = (*Jenv)->GetMethodID(Jenv, JDBCUtilsClass, "cancel",
+										"()V");
+	if (id_cancel == NULL)
+	{
+		elog(ERROR, "id_cancel is NULL");
+	}
+	jq_exception_clear();
+	(*Jenv)->CallObjectMethod(Jenv, java_call, id_cancel);
+	jq_get_exception();
+	elog(ERROR, "Query has been cancelled");
+}
+
 /*
  * jdbc_sig_int_interrupt_check_process Checks and processes if SIGINT
  * interrupt occurs
