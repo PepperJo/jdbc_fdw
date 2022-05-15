@@ -129,24 +129,6 @@ static List * jq_get_table_names(Jconn * conn);
 
 static void jq_get_JDBCUtils(Jconn *conn, jclass *JDBCUtilsClass, jobject *JDBCUtilsObject);
 
-void jq_cancel(Jconn * conn)
-{
-	jclass		JDBCUtilsClass;
-	jobject		JDBCUtilsObject;
-	jmethodID	id_cancel;
-
-	elog(DEBUG3, "In jq_cancel");
-
-	jq_get_JDBCUtils(conn, &JDBCUtilsClass, &JDBCUtilsObject);
-	id_cancel = (*Jenv)->GetMethodID(Jenv, JDBCUtilsClass, "cancel", "()V");
-	if (id_cancel == NULL)
-	{
-		elog(ERROR, "id_cancel is NULL");
-	}
-	(*Jenv)->CallObjectMethod(Jenv, java_call, id_cancel);
-	elog(ERROR, "Query has been cancelled");
-}
-
 /*
  * jdbc_sig_int_interrupt_check_process Checks and processes if SIGINT
  * interrupt occurs
@@ -295,6 +277,13 @@ jdbc_detach_jvm()
 	(*jvm)->DetachCurrentThread(jvm);
 }
 
+static void sig_handler(int signo, siginfo_t *info, void *context)
+{
+	elog(DEBUG3, "Signal: %d", signo);
+	InterruptFlag = true;
+	jdbc_sig_int_interrupt_check_process();
+}
+
 /*
  * jdbc_jvm_init Create the JVM which will be used for calling the Java
  * routines that use JDBC to connect and access the foreign database.
@@ -315,6 +304,7 @@ jdbc_jvm_init(const ForeignServer * server, const UserMapping * user)
 	char		strpkglibdir[] = STR_PKGLIBDIR;
 	char	   *classpath;
 	char	   *maxheapsizeoption = NULL;
+	struct sigaction sig_action = { 0 };
 
 	opts.maxheapsize = 0;
 
@@ -326,6 +316,12 @@ jdbc_jvm_init(const ForeignServer * server, const UserMapping * user)
 
 	if (FunctionCallCheck == false)
 	{
+		sig_action.sa_flags = SA_SIGINFO | SA_UNSUPPORTED | SA_EXPOSE_TAGBITS;
+		sig_action.sa_sigaction = &sig_handler;
+		if (sigaction(SIGINT, &sig_action, NULL) == -1) {
+			ereport(ERROR, (errmsg("Failed to install signal handler")));
+		}
+
 		classpath = (char *) palloc0(strlen(strpkglibdir) + 19);
 		snprintf(classpath, strlen(strpkglibdir) + 19, "-Djava.class.path=%s", strpkglibdir);
 

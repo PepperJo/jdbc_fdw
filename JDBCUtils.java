@@ -457,11 +457,11 @@ public class JDBCUtils {
       resultSetInfoMap.clear();
 
       if (tmpStmt != null) {
-        // tmpStmt.close();
+        tmpStmt.close();
         tmpStmt = null;
       }
       if (tmpPstmt != null) {
-        // tmpPstmt.close();
+        tmpPstmt.close();
         tmpPstmt = null;
       }
     } catch (Throwable e) {
