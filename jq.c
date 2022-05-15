@@ -939,6 +939,7 @@ jq_transaction_status(const Jconn * conn)
 	ereport(DEBUG3, (errmsg("In jq_transaction_status")));
 	return PQTRANS_UNKNOWN;
 }
+
 void *
 jq_bind_sql_var(Jconn * conn, Oid type, int attnum, Datum value, bool *isnull, int resultSetID)
 {
