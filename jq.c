@@ -317,6 +317,7 @@ jdbc_jvm_init(const ForeignServer * server, const UserMapping * user)
 	char	   *classpath;
 	char	   *maxheapsizeoption = NULL;
 	struct sigaction sig_action = { 0 };
+	jclass JDBCUtilsClass;
 
 	opts.maxheapsize = 0;
 
@@ -363,12 +364,12 @@ jdbc_jvm_init(const ForeignServer * server, const UserMapping * user)
 					 ));
 		}
 		ereport(DEBUG3, (errmsg("Successfully created a JVM with %d MB heapsize", opts.maxheapsize)));
-		JDBCUtilsClass_sig = (*Jenv)->FindClass(Jenv, "JDBCUtils");
-		if (JDBCUtilsClass_sig == NULL)
+		JDBCUtilsClass = (*Jenv)->FindClass(Jenv, "JDBCUtils");
+		if (JDBCUtilsClass == NULL)
 		{
 			elog(ERROR, "JDBCUtilsClass_sig is NULL");
 		}
-		id_cancel_sig = (*Jenv)->GetMethodID(Jenv, JDBCUtilsClass_sig, "cancel", "()V");
+		id_cancel_sig = (*Jenv)->GetMethodID(Jenv, JDBCUtilsClass, "cancel", "()V");
 		if (id_cancel == NULL)
 		{
 			elog(ERROR, "id_cancel_sig is NULL");
