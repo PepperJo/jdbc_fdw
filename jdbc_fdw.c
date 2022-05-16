@@ -1122,7 +1122,7 @@ jdbcReScanForeignScan(ForeignScanState *node)
 
 	ereport(DEBUG3, (errmsg("In jdbcReScanForeignScan")));
 
-	if (!fsstate->cursor_exists || !fsstate->resultSetID > 0)
+	if (!fsstate->cursor_exists || !(fsstate->resultSetID > 0))
 		return;
 
 	(void) jq_exec_id(fsstate->conn, fsstate->query, &fsstate->resultSetID);
@@ -2899,7 +2899,7 @@ jdbcImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					goto NEXT_COLUMN;
 				}
 				/* Print column name and type */
-				appendStringInfo(&buf, "%s %s",
+				appendStringInfo(&buf, "\"%s\" %s",
 								 columnInfo->column_name,
 								 columnInfo->column_type);
 				/* Add option if the column is rowkey. */

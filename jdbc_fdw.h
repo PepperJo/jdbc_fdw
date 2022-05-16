@@ -123,6 +123,7 @@ extern void jdbc_reset_transmission_modes(int nestlevel);
 extern Jconn * jdbc_get_connection(ForeignServer *server, UserMapping *user,
 								   bool will_prep_stmt);
 extern void jdbc_release_connection(Jconn * conn);
+extern void jdbc_cancel_connections();
 extern unsigned int jdbc_get_cursor_number(Jconn * conn);
 extern unsigned int jdbc_get_prep_stmt_number(Jconn * conn);
 extern void jdbc_fdw_report_error(int elevel, Jresult * res, Jconn * conn,

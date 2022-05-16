@@ -26,6 +26,7 @@
 #include "miscadmin.h"
 #include "commands/defrem.h"
 #include "libpq-fe.h"
+#include "signal.h"
 
 #include "jni.h"
 
@@ -43,8 +44,11 @@
 
 static JNIEnv * Jenv;
 static JavaVM * jvm;
-jobject		java_call;
 static bool InterruptFlag;		/* Used for checking for SIGINT interrupt */
+
+static jmethodID id_cancel_sig;
+static struct sigaction postgres_sig_action;
+static struct sigaction jvm_sig_action;
 
 /*
  * Describes the valid options for objects that use this wrapper.
@@ -106,11 +110,6 @@ static void jdbc_attach_jvm();
 static void jdbc_detach_jvm();
 
 /*
- * SIGINT interrupt check and process function
- */
-static void jdbc_sig_int_interrupt_check_process();
-
-/*
  * clears any exception that is currently being thrown
  */
 void		jq_exception_clear(void);
@@ -130,38 +129,6 @@ static List * jq_get_table_names(Jconn * conn);
 static void jq_get_JDBCUtils(Jconn *conn, jclass *JDBCUtilsClass, jobject *JDBCUtilsObject);
 
 /*
- * jdbc_sig_int_interrupt_check_process Checks and processes if SIGINT
- * interrupt occurs
- */
-static void
-jdbc_sig_int_interrupt_check_process()
-{
-
-	if (InterruptFlag == true)
-	{
-		jclass		JDBCUtilsClass;
-		jmethodID	id_cancel;
-
-		JDBCUtilsClass = (*Jenv)->FindClass(Jenv, "JDBCUtils");
-		if (JDBCUtilsClass == NULL)
-		{
-			elog(ERROR, "JDBCUtilsClass is NULL");
-		}
-		id_cancel = (*Jenv)->GetMethodID(Jenv, JDBCUtilsClass, "cancel",
-										 "()V");
-		if (id_cancel == NULL)
-		{
-			elog(ERROR, "id_cancel is NULL");
-		}
-		jq_exception_clear();
-		(*Jenv)->CallObjectMethod(Jenv, java_call, id_cancel);
-		jq_get_exception();
-		InterruptFlag = false;
-		elog(ERROR, "Query has been cancelled");
-	}
-}
-
-/*
  * jdbc_convert_string_to_cstring Uses a String object passed as a jobject to
  * the function to create an instance of C String.
  */
@@ -171,8 +138,6 @@ jdbc_convert_string_to_cstring(jobject java_cstring)
 	jclass		JavaString;
 	char	   *StringPointer;
 	char	   *cString = NULL;
-
-	jdbc_sig_int_interrupt_check_process();
 
 	JavaString = (*Jenv)->FindClass(Jenv, "java/lang/String");
 	if (!((*Jenv)->IsInstanceOf(Jenv, java_cstring, JavaString)))
@@ -205,8 +170,6 @@ jdbc_convert_byte_array_to_datum(jbyteArray byteVal)
 	Datum		valueDatum;
 	jbyte	   *buf = (*Jenv)->GetByteArrayElements(Jenv, byteVal, NULL);
 	jsize		size = (*Jenv)->GetArrayLength(Jenv, byteVal);
-
-	jdbc_sig_int_interrupt_check_process();
 
 	if (buf == NULL)
 		return 0;
@@ -252,7 +215,11 @@ jdbc_destroy_jvm()
 {
 	ereport(DEBUG3, (errmsg("In jdbc_destroy_jvm")));
 
-	(*jvm)->DestroyJavaVM(jvm);
+	if (sigaction(SIGINT, &jvm_sig_action, NULL) == -1) {
+		ereport(ERROR, (errmsg("Failed to install signal handler")));
+	}
+	raise(SIGINT);
+	// (*jvm)->DestroyJavaVM(jvm);
 }
 
 /*
@@ -277,6 +244,23 @@ jdbc_detach_jvm()
 	(*jvm)->DetachCurrentThread(jvm);
 }
 
+extern void jdbc_cancel_connections();
+
+static void sig_handler(int signo, siginfo_t *info, void *context)
+{
+
+	elog(DEBUG3, "Signal: %d", signo);
+	InterruptFlag = true;
+	jdbc_cancel_connections();
+	postgres_sig_action.sa_sigaction(signo, info, context);
+}
+
+void
+jq_cancel_sig(Jconn * conn)
+{
+	(*Jenv)->CallObjectMethod(Jenv, conn->JDBCUtilsObject, id_cancel_sig);
+}
+
 /*
  * jdbc_jvm_init Create the JVM which will be used for calling the Java
  * routines that use JDBC to connect and access the foreign database.
@@ -297,6 +281,8 @@ jdbc_jvm_init(const ForeignServer * server, const UserMapping * user)
 	char		strpkglibdir[] = STR_PKGLIBDIR;
 	char	   *classpath;
 	char	   *maxheapsizeoption = NULL;
+	struct sigaction sig_action = { 0 };
+	jclass JDBCUtilsClass;
 
 	opts.maxheapsize = 0;
 
@@ -304,10 +290,11 @@ jdbc_jvm_init(const ForeignServer * server, const UserMapping * user)
 	jdbc_get_server_options(&opts, server, user);	/* Get the maxheapsize
 													 * value (if set) */
 
-	jdbc_sig_int_interrupt_check_process();
-
 	if (FunctionCallCheck == false)
 	{
+		if (sigaction(SIGINT, NULL, &postgres_sig_action) == -1) {
+			ereport(ERROR, (errmsg("Failed to install signal handler")));
+		}
 		classpath = (char *) palloc0(strlen(strpkglibdir) + 19);
 		snprintf(classpath, strlen(strpkglibdir) + 19, "-Djava.class.path=%s", strpkglibdir);
 
@@ -340,6 +327,21 @@ jdbc_jvm_init(const ForeignServer * server, const UserMapping * user)
 					 ));
 		}
 		ereport(DEBUG3, (errmsg("Successfully created a JVM with %d MB heapsize", opts.maxheapsize)));
+		JDBCUtilsClass = (*Jenv)->FindClass(Jenv, "JDBCUtils");
+		if (JDBCUtilsClass == NULL)
+		{
+			elog(ERROR, "JDBCUtilsClass_sig is NULL");
+		}
+		id_cancel_sig = (*Jenv)->GetMethodID(Jenv, JDBCUtilsClass, "cancel", "()V");
+		if (id_cancel_sig == NULL)
+		{
+			elog(ERROR, "id_cancel_sig is NULL");
+		}
+		sig_action.sa_flags = SA_SIGINFO;
+		sig_action.sa_sigaction = &sig_handler;
+		if (sigaction(SIGINT, &sig_action, &jvm_sig_action) == -1) {
+			ereport(ERROR, (errmsg("Failed to install signal handler")));
+		}
 		InterruptFlag = false;
 		/* Register an on_proc_exit handler that shuts down the JVM. */
 		on_proc_exit(jdbc_destroy_jvm, 0);
@@ -660,7 +662,6 @@ jq_iterate(Jconn * conn, ForeignScanState * node, List * retrieved_attrs, int re
 	jq_get_JDBCUtils(conn, &JDBCUtilsClass, &JDBCUtilsObject);
 
 	ExecClearTuple(tupleSlot);
-	jdbc_sig_int_interrupt_check_process();
 
 	idNumberOfColumns = (*Jenv)->GetMethodID(Jenv, JDBCUtilsClass, "getNumberOfColumns", "(I)I");
 	if (idNumberOfColumns == NULL)
@@ -907,7 +908,7 @@ int
 jq_connection_used_password(const Jconn * conn)
 {
 	ereport(DEBUG3, (errmsg("In jq_connection_used_password")));
-	return 0;
+	return 1;
 }
 
 void
@@ -939,6 +940,7 @@ jq_transaction_status(const Jconn * conn)
 	ereport(DEBUG3, (errmsg("In jq_transaction_status")));
 	return PQTRANS_UNKNOWN;
 }
+
 void *
 jq_bind_sql_var(Jconn * conn, Oid type, int attnum, Datum value, bool *isnull, int resultSetID)
 {
@@ -1283,7 +1285,10 @@ void
 jq_get_exception()
 {
 	/* check for pending exceptions */
-	if ((*Jenv)->ExceptionCheck(Jenv))
+	if (InterruptFlag)
+	{
+		InterruptFlag = false;
+	} else if ((*Jenv)->ExceptionCheck(Jenv))
 	{
 		jthrowable	exc;
 		jmethodID	exceptionMsgID;
@@ -1294,6 +1299,7 @@ jq_get_exception()
 
 		/* determines if an exception is being thrown */
 		exc = (*Jenv)->ExceptionOccurred(Jenv);
+		(*Jenv)->ExceptionDescribe(Jenv);
 		/* get to the message and stack trace one as String */
 		objectClass = (*Jenv)->FindClass(Jenv, "java/lang/Object");
 		if (objectClass == NULL)
@@ -1304,8 +1310,7 @@ jq_get_exception()
 		exceptionMsg = (jstring) (*Jenv)->CallObjectMethod(Jenv, exc, exceptionMsgID);
 		exceptionString = jdbc_convert_string_to_cstring((jobject) exceptionMsg);
 		err_msg = pstrdup(exceptionString);
-		ereport(ERROR, (errmsg("remote server returned an error")));
-		ereport(DEBUG3, (errmsg("%s", err_msg)));
+		ereport(ERROR, (errmsg("remote server returned an error %s", err_msg)));
 	}
 	return;
 }
@@ -1351,7 +1356,6 @@ jq_get_column_infos(Jconn * conn, char *tablename)
 	}
 	PG_END_TRY();
 
-	jdbc_sig_int_interrupt_check_process();
 	/* getColumnNames */
 	idGetColumnNames = (*Jenv)->GetMethodID(Jenv, JDBCUtilsClass, "getColumnNames", "(Ljava/lang/String;)[Ljava/lang/String;");
 	if (idGetColumnNames == NULL)
@@ -1474,7 +1478,6 @@ jq_get_table_names(Jconn * conn)
 
 	jq_get_JDBCUtils(conn, &JDBCUtilsClass, &JDBCUtilsObject);
 
-	jdbc_sig_int_interrupt_check_process();
 	idGetTableNames = (*Jenv)->GetMethodID(Jenv, JDBCUtilsClass, "getTableNames", "()[Ljava/lang/String;");
 	if (idGetTableNames == NULL)
 	{
