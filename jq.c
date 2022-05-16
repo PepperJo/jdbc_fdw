@@ -591,6 +591,11 @@ jq_exec_id(Jconn * conn, const char *query, int *resultSetID)
 	}
 	jq_exception_clear();
 	*resultSetID = (int) (*Jenv)->CallIntMethod(Jenv, conn->JDBCUtilsObject, idCreateStatementID, statement);
+	if (InterruptFlag) {
+		*res = PGRES_COMMAND_OK;
+		InterruptFlag = false;
+		return res;
+	}
 	jq_get_exception();
 	if (*resultSetID < 0)
 	{
@@ -1278,9 +1283,7 @@ void
 jq_get_exception()
 {
 	/* check for pending exceptions */
-	if (InterruptFlag) {
-		InterruptFlag = false;
-	} else if ((*Jenv)->ExceptionCheck(Jenv))
+	if ((*Jenv)->ExceptionCheck(Jenv))
 	{
 		jthrowable	exc;
 		jmethodID	exceptionMsgID;
