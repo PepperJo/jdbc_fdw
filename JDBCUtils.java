@@ -361,7 +361,7 @@ public class JDBCUtils {
       ResultSetMetaData rSetMetadata = tmpResultSet.getMetaData();
       List<String> tmpColumnTypesList = new ArrayList<String>();
       while (tmpResultSet.next()) {
-        tmpColumnTypesList.add(tmpResultSet.getString("TYPE_NAME"));
+        tmpColumnTypesList.add(tmpResultSet.getString("TYPE_NAME").toUpperCase());
       }
       String[] tmpColumnTypes = new String[tmpColumnTypesList.size()];
       for (int i = 0; i < tmpColumnTypesList.size(); i++) {
