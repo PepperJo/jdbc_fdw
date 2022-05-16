@@ -47,6 +47,8 @@ static JavaVM * jvm;
 static bool InterruptFlag;		/* Used for checking for SIGINT interrupt */
 
 static jmethodID id_cancel_sig;
+static struct sigaction postgres_sig_action;
+static struct sigaction jvm_sig_action;
 
 /*
  * Describes the valid options for objects that use this wrapper.
@@ -213,6 +215,10 @@ jdbc_destroy_jvm()
 {
 	ereport(DEBUG3, (errmsg("In jdbc_destroy_jvm")));
 
+	if (sigaction(SIGINT, &jvm_sig_action, NULL) == -1) {
+		ereport(ERROR, (errmsg("Failed to install signal handler")));
+	}
+
 	(*jvm)->DestroyJavaVM(jvm);
 }
 
@@ -246,6 +252,7 @@ static void sig_handler(int signo, siginfo_t *info, void *context)
 	elog(DEBUG3, "Signal: %d", signo);
 	InterruptFlag = true;
 	jdbc_cancel_connections();
+	postgres_sig_action.sa_sigaction(signo, info, context);
 }
 
 void
@@ -285,9 +292,9 @@ jdbc_jvm_init(const ForeignServer * server, const UserMapping * user)
 
 	if (FunctionCallCheck == false)
 	{
-		// if (sigaction(SIGINT, NULL, &sig_action) == -1) {
-		// 	ereport(ERROR, (errmsg("Failed to install signal handler")));
-		// }
+		if (sigaction(SIGINT, NULL, &postgres_sig_action) == -1) {
+			ereport(ERROR, (errmsg("Failed to install signal handler")));
+		}
 		classpath = (char *) palloc0(strlen(strpkglibdir) + 19);
 		snprintf(classpath, strlen(strpkglibdir) + 19, "-Djava.class.path=%s", strpkglibdir);
 
@@ -332,7 +339,7 @@ jdbc_jvm_init(const ForeignServer * server, const UserMapping * user)
 		}
 		sig_action.sa_flags = SA_SIGINFO;
 		sig_action.sa_sigaction = &sig_handler;
-		if (sigaction(SIGINT, &sig_action, NULL) == -1) {
+		if (sigaction(SIGINT, &sig_action, &jvm_sig_action) == -1) {
 			ereport(ERROR, (errmsg("Failed to install signal handler")));
 		}
 		InterruptFlag = false;
@@ -591,11 +598,6 @@ jq_exec_id(Jconn * conn, const char *query, int *resultSetID)
 	}
 	jq_exception_clear();
 	*resultSetID = (int) (*Jenv)->CallIntMethod(Jenv, conn->JDBCUtilsObject, idCreateStatementID, statement);
-	if (InterruptFlag) {
-		*res = PGRES_COMMAND_OK;
-		InterruptFlag = false;
-		return res;
-	}
 	jq_get_exception();
 	if (*resultSetID < 0)
 	{
@@ -1283,7 +1285,10 @@ void
 jq_get_exception()
 {
 	/* check for pending exceptions */
-	if ((*Jenv)->ExceptionCheck(Jenv))
+	if (InterruptFlag)
+	{
+		InterruptFlag = false;
+	} else if ((*Jenv)->ExceptionCheck(Jenv))
 	{
 		jthrowable	exc;
 		jmethodID	exceptionMsgID;
