@@ -370,7 +370,7 @@ jdbc_jvm_init(const ForeignServer * server, const UserMapping * user)
 			elog(ERROR, "JDBCUtilsClass_sig is NULL");
 		}
 		id_cancel_sig = (*Jenv)->GetMethodID(Jenv, JDBCUtilsClass, "cancel", "()V");
-		if (id_cancel == NULL)
+		if (id_cancel_sig == NULL)
 		{
 			elog(ERROR, "id_cancel_sig is NULL");
 		}
