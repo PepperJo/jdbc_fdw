@@ -47,6 +47,8 @@ static JavaVM * jvm;
 jobject		java_call;
 static bool InterruptFlag;		/* Used for checking for SIGINT interrupt */
 
+static jmethodID id_cancel_sig;
+
 /*
  * Describes the valid options for objects that use this wrapper.
  */
@@ -278,12 +280,21 @@ jdbc_detach_jvm()
 	(*jvm)->DetachCurrentThread(jvm);
 }
 
-// static void sig_handler(int signo, siginfo_t *info, void *context)
-// {
-// 	elog(DEBUG3, "Signal: %d", signo);
-// 	// Do nothing and handle cancel in jdbcfdw_xact_callback
-// 	// Otherwise JVM gets killed
-// }
+extern void jdbc_cancel_connections();
+
+static void sig_handler(int signo, siginfo_t *info, void *context)
+{
+
+	elog(DEBUG3, "Signal: %d", signo);
+
+	jdbc_cancel_connections();
+}
+
+void
+jq_cancel_sig(Jconn * conn)
+{
+	(*Jenv)->CallObjectMethod(Jenv, conn->JDBCUtilsObject, id_cancel_sig);
+}
 
 /*
  * jdbc_jvm_init Create the JVM which will be used for calling the Java
@@ -352,6 +363,17 @@ jdbc_jvm_init(const ForeignServer * server, const UserMapping * user)
 					 ));
 		}
 		ereport(DEBUG3, (errmsg("Successfully created a JVM with %d MB heapsize", opts.maxheapsize)));
+		JDBCUtilsClass_sig = (*Jenv)->FindClass(Jenv, "JDBCUtils");
+		if (JDBCUtilsClass_sig == NULL)
+		{
+			elog(ERROR, "JDBCUtilsClass_sig is NULL");
+		}
+		id_cancel_sig = (*Jenv)->GetMethodID(Jenv, JDBCUtilsClass_sig, "cancel", "()V");
+		if (id_cancel == NULL)
+		{
+			elog(ERROR, "id_cancel_sig is NULL");
+		}
+
 		if (sigaction(SIGINT, &sig_action, NULL) == -1) {
 			ereport(ERROR, (errmsg("Failed to install signal handler")));
 		}
