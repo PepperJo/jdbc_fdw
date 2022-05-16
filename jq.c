@@ -352,8 +352,6 @@ jdbc_jvm_init(const ForeignServer * server, const UserMapping * user)
 					 ));
 		}
 		ereport(DEBUG3, (errmsg("Successfully created a JVM with %d MB heapsize", opts.maxheapsize)));
-		// sig_action.sa_flags = SA_SIGINFO;
-		// sig_action.sa_sigaction = &sig_handler;
 		if (sigaction(SIGINT, &sig_action, NULL) == -1) {
 			ereport(ERROR, (errmsg("Failed to install signal handler")));
 		}
