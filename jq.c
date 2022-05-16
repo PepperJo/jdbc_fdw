@@ -44,7 +44,6 @@
 
 static JNIEnv * Jenv;
 static JavaVM * jvm;
-jobject		java_call;
 static bool InterruptFlag;		/* Used for checking for SIGINT interrupt */
 
 static jmethodID id_cancel_sig;
@@ -109,11 +108,6 @@ static void jdbc_attach_jvm();
 static void jdbc_detach_jvm();
 
 /*
- * SIGINT interrupt check and process function
- */
-static void jdbc_sig_int_interrupt_check_process();
-
-/*
  * clears any exception that is currently being thrown
  */
 void		jq_exception_clear(void);
@@ -133,38 +127,6 @@ static List * jq_get_table_names(Jconn * conn);
 static void jq_get_JDBCUtils(Jconn *conn, jclass *JDBCUtilsClass, jobject *JDBCUtilsObject);
 
 /*
- * jdbc_sig_int_interrupt_check_process Checks and processes if SIGINT
- * interrupt occurs
- */
-static void
-jdbc_sig_int_interrupt_check_process()
-{
-
-	if (InterruptFlag == true)
-	{
-		jclass		JDBCUtilsClass;
-		jmethodID	id_cancel;
-
-		JDBCUtilsClass = (*Jenv)->FindClass(Jenv, "JDBCUtils");
-		if (JDBCUtilsClass == NULL)
-		{
-			elog(ERROR, "JDBCUtilsClass is NULL");
-		}
-		id_cancel = (*Jenv)->GetMethodID(Jenv, JDBCUtilsClass, "cancel",
-										 "()V");
-		if (id_cancel == NULL)
-		{
-			elog(ERROR, "id_cancel is NULL");
-		}
-		jq_exception_clear();
-		(*Jenv)->CallObjectMethod(Jenv, java_call, id_cancel);
-		jq_get_exception();
-		InterruptFlag = false;
-		elog(ERROR, "Query has been cancelled");
-	}
-}
-
-/*
  * jdbc_convert_string_to_cstring Uses a String object passed as a jobject to
  * the function to create an instance of C String.
  */
@@ -174,8 +136,6 @@ jdbc_convert_string_to_cstring(jobject java_cstring)
 	jclass		JavaString;
 	char	   *StringPointer;
 	char	   *cString = NULL;
-
-	jdbc_sig_int_interrupt_check_process();
 
 	JavaString = (*Jenv)->FindClass(Jenv, "java/lang/String");
 	if (!((*Jenv)->IsInstanceOf(Jenv, java_cstring, JavaString)))
@@ -208,8 +168,6 @@ jdbc_convert_byte_array_to_datum(jbyteArray byteVal)
 	Datum		valueDatum;
 	jbyte	   *buf = (*Jenv)->GetByteArrayElements(Jenv, byteVal, NULL);
 	jsize		size = (*Jenv)->GetArrayLength(Jenv, byteVal);
-
-	jdbc_sig_int_interrupt_check_process();
 
 	if (buf == NULL)
 		return 0;
@@ -286,7 +244,7 @@ static void sig_handler(int signo, siginfo_t *info, void *context)
 {
 
 	elog(DEBUG3, "Signal: %d", signo);
-
+	InterruptFlag = true;
 	jdbc_cancel_connections();
 }
 
@@ -324,8 +282,6 @@ jdbc_jvm_init(const ForeignServer * server, const UserMapping * user)
 	ereport(DEBUG3, (errmsg("In jdbc_jvm_init")));
 	jdbc_get_server_options(&opts, server, user);	/* Get the maxheapsize
 													 * value (if set) */
-
-	jdbc_sig_int_interrupt_check_process();
 
 	if (FunctionCallCheck == false)
 	{
@@ -699,7 +655,6 @@ jq_iterate(Jconn * conn, ForeignScanState * node, List * retrieved_attrs, int re
 	jq_get_JDBCUtils(conn, &JDBCUtilsClass, &JDBCUtilsObject);
 
 	ExecClearTuple(tupleSlot);
-	jdbc_sig_int_interrupt_check_process();
 
 	idNumberOfColumns = (*Jenv)->GetMethodID(Jenv, JDBCUtilsClass, "getNumberOfColumns", "(I)I");
 	if (idNumberOfColumns == NULL)
@@ -1323,7 +1278,9 @@ void
 jq_get_exception()
 {
 	/* check for pending exceptions */
-	if ((*Jenv)->ExceptionCheck(Jenv))
+	if (InterruptFlag) {
+		InterruptFlag = false;
+	} else if ((*Jenv)->ExceptionCheck(Jenv))
 	{
 		jthrowable	exc;
 		jmethodID	exceptionMsgID;
@@ -1391,7 +1348,6 @@ jq_get_column_infos(Jconn * conn, char *tablename)
 	}
 	PG_END_TRY();
 
-	jdbc_sig_int_interrupt_check_process();
 	/* getColumnNames */
 	idGetColumnNames = (*Jenv)->GetMethodID(Jenv, JDBCUtilsClass, "getColumnNames", "(Ljava/lang/String;)[Ljava/lang/String;");
 	if (idGetColumnNames == NULL)
@@ -1514,7 +1470,6 @@ jq_get_table_names(Jconn * conn)
 
 	jq_get_JDBCUtils(conn, &JDBCUtilsClass, &JDBCUtilsObject);
 
-	jdbc_sig_int_interrupt_check_process();
 	idGetTableNames = (*Jenv)->GetMethodID(Jenv, JDBCUtilsClass, "getTableNames", "()[Ljava/lang/String;");
 	if (idGetTableNames == NULL)
 	{

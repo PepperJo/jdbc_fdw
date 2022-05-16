@@ -39,6 +39,7 @@ public class JDBCUtils {
   private static int resultSetKey = 1;
   private static ConcurrentHashMap<Integer, resultSetInfo> resultSetInfoMap =
       new ConcurrentHashMap<Integer, resultSetInfo>();
+  private Thread thread;
 
   /*
    * createConnection
@@ -493,6 +494,7 @@ public class JDBCUtils {
   public void cancel() throws SQLException {
     try {
       closeStatement();
+      thread.interrupt();
     } catch (Throwable e) {
       throw e;
     }
@@ -504,6 +506,7 @@ public class JDBCUtils {
    *      throw error message when the connection dosn't exist.
    */
   public void checkConnExist() throws IllegalArgumentException {
+    thread = Thread.currentThread();
     if (conn == null) {
       throw new IllegalArgumentException(
           "Must create connection before creating a prepared statment");
