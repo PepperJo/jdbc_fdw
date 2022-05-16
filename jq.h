@@ -52,7 +52,6 @@ typedef struct JtableInfo
 /*
  * Replacement for libpq-fe.h functions
  */
-extern void jq_cancel_sig(Jconn * conn);
 extern Jresult * jq_exec(Jconn * conn, const char *query);
 extern Jresult * jq_exec_id(Jconn * conn, const char *query, int *resultSetID);
 extern void *jq_release_resultset_id(Jconn * conn, int resultSetID);

@@ -44,10 +44,7 @@
 
 static JNIEnv * Jenv;
 static JavaVM * jvm;
-static bool InterruptFlag;		/* Used for checking for SIGINT interrupt */
 
-static jmethodID id_cancel_sig;
-static struct sigaction postgres_sig_action;
 static struct sigaction jvm_sig_action;
 
 /*
@@ -244,23 +241,6 @@ jdbc_detach_jvm()
 	(*jvm)->DetachCurrentThread(jvm);
 }
 
-extern void jdbc_cancel_connections();
-
-static void sig_handler(int signo, siginfo_t *info, void *context)
-{
-
-	elog(DEBUG3, "Signal: %d", signo);
-	InterruptFlag = true;
-	jdbc_cancel_connections();
-	postgres_sig_action.sa_sigaction(signo, info, context);
-}
-
-void
-jq_cancel_sig(Jconn * conn)
-{
-	(*Jenv)->CallObjectMethod(Jenv, conn->JDBCUtilsObject, id_cancel_sig);
-}
-
 /*
  * jdbc_jvm_init Create the JVM which will be used for calling the Java
  * routines that use JDBC to connect and access the foreign database.
@@ -292,7 +272,7 @@ jdbc_jvm_init(const ForeignServer * server, const UserMapping * user)
 
 	if (FunctionCallCheck == false)
 	{
-		if (sigaction(SIGINT, NULL, &postgres_sig_action) == -1) {
+		if (sigaction(SIGINT, NULL, &sig_action) == -1) {
 			ereport(ERROR, (errmsg("Failed to install signal handler")));
 		}
 		classpath = (char *) palloc0(strlen(strpkglibdir) + 19);
@@ -327,22 +307,9 @@ jdbc_jvm_init(const ForeignServer * server, const UserMapping * user)
 					 ));
 		}
 		ereport(DEBUG3, (errmsg("Successfully created a JVM with %d MB heapsize", opts.maxheapsize)));
-		JDBCUtilsClass = (*Jenv)->FindClass(Jenv, "JDBCUtils");
-		if (JDBCUtilsClass == NULL)
-		{
-			elog(ERROR, "JDBCUtilsClass_sig is NULL");
-		}
-		id_cancel_sig = (*Jenv)->GetMethodID(Jenv, JDBCUtilsClass, "cancel", "()V");
-		if (id_cancel_sig == NULL)
-		{
-			elog(ERROR, "id_cancel_sig is NULL");
-		}
-		sig_action.sa_flags = SA_SIGINFO;
-		sig_action.sa_sigaction = &sig_handler;
 		if (sigaction(SIGINT, &sig_action, &jvm_sig_action) == -1) {
 			ereport(ERROR, (errmsg("Failed to install signal handler")));
 		}
-		InterruptFlag = false;
 		/* Register an on_proc_exit handler that shuts down the JVM. */
 		on_proc_exit(jdbc_destroy_jvm, 0);
 		FunctionCallCheck = true;
@@ -1285,10 +1252,7 @@ void
 jq_get_exception()
 {
 	/* check for pending exceptions */
-	if (InterruptFlag)
-	{
-		InterruptFlag = false;
-	} else if ((*Jenv)->ExceptionCheck(Jenv))
+	if ((*Jenv)->ExceptionCheck(Jenv))
 	{
 		jthrowable	exc;
 		jmethodID	exceptionMsgID;

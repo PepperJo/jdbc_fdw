@@ -328,26 +328,6 @@ jdbc_release_connection(Jconn * conn)
 	 */
 }
 
-void
-jdbc_cancel_connections()
-{
-	HASH_SEQ_STATUS scan;
-	ConnCacheEntry *entry;
-
-	/*
-	 * Scan all connection cache entries to find open remote transactions, and
-	 * close them.
-	 */
-	hash_seq_init(&scan, ConnectionHash);
-	while ((entry = (ConnCacheEntry *) hash_seq_search(&scan)))
-	{
-		if (jq_status(entry->conn) == CONNECTION_OK)
-		{
-			jq_cancel_sig(entry->conn);
-		}
-	}
-}
-
 /*
  * Assign a "unique" number for a cursor.
  *
