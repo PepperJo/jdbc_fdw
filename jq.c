@@ -218,8 +218,8 @@ jdbc_destroy_jvm()
 	if (sigaction(SIGINT, &jvm_sig_action, NULL) == -1) {
 		ereport(ERROR, (errmsg("Failed to install signal handler")));
 	}
-
-	(*jvm)->DestroyJavaVM(jvm);
+	raise(SIGINT);
+	// (*jvm)->DestroyJavaVM(jvm);
 }
 
 /*
